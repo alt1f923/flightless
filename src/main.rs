@@ -1,31 +1,34 @@
 mod mathdaddy {
-    let operators: [char; 4] = ['+', '-', '/', '*'];
-    fn is_postfix(statement: &str) -> bool {operators.find(statement.chars().last().unwrap())};
+    fn is_operator(character: char) -> bool {
+        match character {
+            '+' => true,
+            '-' => true,
+            '/' => true,
+            '*' => true,
+             _  => false,
+        }
+    }
+    fn is_postfix(statement: &str) -> bool {
+        is_operator(statement.chars().last().unwrap())
+    }
+    fn is_prefix(statement: &str) -> bool {
+        is_operator(statement.chars().nth(0).unwrap())
+    }
+    fn postfix
     pub fn solve(statement: &str) {
         if is_postfix(statement) {
-
+            println!("postfix");
+        } else if is_prefix(statement) {
+            println!("prefix");
+        } else {
+            println!("infix");
         }
     }
 }
-Arr
-Array
-arr
-array 
 
 
 fn main() {
-    mathdaddy::solve()
+    mathdaddy::solve("3 2 +");
+    mathdaddy::solve("+ 3 2");
+    mathdaddy::solve("3 + 2");
 }
-
-
-// for each symbol s
-//   if s is an operand
-//     output s
-//   else if it is a left parenthesis
-//     push s
-//   else if it is a right parenthesis
-//     pop to output until corresponding left parenthesis popped
-//   else # it is an operator
-//     pop all higher or equal precedence operators (than s) to output
-//     push s
-// pop all remaining operators to output
