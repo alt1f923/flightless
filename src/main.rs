@@ -16,7 +16,7 @@ mod mathdaddy {
             "-" => 0,
             "/" => 3,
             "*" => 2,
-             _  => 4,//This might be a bad inclusion, revisit later
+             _  => 0,//This might be a bad inclusion, revisit later
         }
     }
 
@@ -42,16 +42,18 @@ mod mathdaddy {
         let mut opstack = Vec::new();
         let mut output = std::string::String::new();
 
-        for token in str::split_whitespace(&statement) {
+        for token in str::split_whitespace(&statement) {            
             if is_operand(token) {
                 output = output + token;
-                output.push(' ')
+                output.push(' ');
             }else {//Not an operand, however could be an operand inside parenthesises or an operator
                     if token.chars().nth(0).unwrap() == '(' {//Checking if first character of this string is a left parenthesis
                         opstack.push("(");
-                        opstack.push(&token[1..token.len()]);
+                        output = output + &token[1..token.len()];
+                        output.push(' ');
                     } else if token.chars().last().unwrap() == ')' {//Checking if last character of this string is a right parenthesis
-                        opstack.push(&token[0..token.len()-1]);
+                        output = output + &token[0..token.len()-1];
+                        output.push(' ');
                         let mut operator = opstack.pop().unwrap();
                         while operator != "(" {//Popping all operands and operators out of the stack until the accompying parenthesis is found
                             output = output + operator;
@@ -76,6 +78,21 @@ mod mathdaddy {
         output
     }
 
+    fn prefix_to_postfix(statement: &String) -> String {
+        let mut opstack = Vec::new();
+
+        for token in str::split_whitespace(&statement).rev() {//Reading the statement from right to left (reverse order)
+            if is_operand(token) {
+                opstack.push(token.to_string());
+            }else{//Token is not an operand, so assuming this is a valid prefix equation it will be an operator
+                let x = opstack.pop().unwrap();
+                let y = opstack.pop().unwrap();
+                opstack.push(format!("{} {} {}", x, y, token));
+            }
+        }
+        opstack.pop().unwrap().to_string()
+    }
+
     fn solve_postfix(statement: &String) -> f64 {
         let mut opstack = Vec::new();
 
@@ -94,9 +111,9 @@ mod mathdaddy {
 
     pub fn solve(statement: &String) -> (f64, String, String) {
         let postfix_eq = if is_postfix(statement) {statement.to_string()}
-                         else if is_prefix(statement) {std::string::String::from("3 2 +")}
+                         else if is_prefix(statement) {prefix_to_postfix(statement)}
                          else {infix_to_postfix(statement)};
-        (solve_postfix(&postfix_eq), statement.to_string(), postfix_eq)
+        (solve_postfix(&postfix_eq), statement.to_string(), postfix_eq)//Returning a tuple of the solution, original statement and what it was converted to (postfix)
     }
 
 }
@@ -104,12 +121,12 @@ mod mathdaddy {
 
 
 fn main() {
-    let x = std::string::String::from("3 2 +");
+    let x = std::string::String::from("3 2 + 1 *");
     println!("{:?}", mathdaddy::solve(&x));
     
     let y = std::string::String::from("+ 3 2");
     println!("{:?}", mathdaddy::solve(&y));
     
-    let z = std::string::String::from("3 + 2");
+    let z = std::string::String::from("3 + 2 * 2");
     println!("{:?}", mathdaddy::solve(&z));
 }
