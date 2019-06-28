@@ -1,6 +1,6 @@
 fn is_operator(token: char) -> bool {
         match token {
-            '+' | '-' | '/' | '*' => true,
+            '+' | '-' | '/' | '*' | '^' | '√' => true,
              _  => false,
         }
     }
@@ -15,6 +15,8 @@ fn priority(operator: &str) -> u8 {
         "-" => 0,
         "/" => 3,
         "*" => 2,
+        "^" => 4,
+        "√" => 5,
             _  => 0,//This might be a bad inclusion, revisit later
     }
 }
@@ -25,6 +27,8 @@ fn do_operation(operator: &str, x: f64, y: f64) -> f64 {
         "-" => x - y,
         "/" => x / y,
         "*" => x * y,
+        "^" => x.powf(y),
+        "√" => x.sqrt(),
             _  => 0.0,//This might be a bad inclusion, revisit later
     }
 }

@@ -36,7 +36,7 @@ struct Handler;
 impl EventHandler for Handler {
     fn ready(&self, ctx: Context, _: Ready) {
         let status = OnlineStatus::Online;
-        let activity = Activity::playing("woo rust");
+        let activity = Activity::playing("rust good");
         ctx.set_presence(Some(activity), status);
         println!("connected");
     }
