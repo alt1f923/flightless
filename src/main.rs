@@ -60,15 +60,18 @@ fn main() {
 fn solve(ctx: &mut Context, msg: &Message) -> CommandResult {
     let content = &msg.content;
     let (answer, statement, postfix_statement) = mathdaddy::solve(&content[8..content.len()].to_string());
-    let mut reply = std::string::String::new();
-    reply.push_str("your statement: ");
-    reply = reply + &statement;
-    reply.push_str("\npostfix statement: ");
-    reply = reply + &postfix_statement;
-    reply.push_str("\nsolution: ");
-    reply = reply + &answer.to_string();
+    let mut description = std::string::String::new();
+    description.push_str("\nStatement in postfix notation: ");
+    description = description + &postfix_statement;
+    description.push_str("\nSolution: ");
+    description = description + &answer.to_string();
 
-    println!("{:?}", msg.reply(ctx, &reply));
+    println!("{:?}", msg.channel_id.send_message(&ctx, |m| m
+        .embed(|e| e
+            .title(format!("Solution for: {}", &statement))
+            .description(description))
+    ))
+    ;
 
 
     Ok(())
