@@ -1,2 +1,4 @@
 # flightless
-personal discord bot rewrite from python to rust
+discord bot written in rust that does the things that i want it to
+what are they?
+i dunno
