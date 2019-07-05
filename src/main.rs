@@ -29,7 +29,7 @@ use serenity::{
 group!({
     name: "general",
     options: {},
-    commands: [solve, kiwi],
+    commands: [solve],
 });
 
 struct Handler;
@@ -77,7 +77,7 @@ fn solve(ctx: &mut Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-#[command]
-fn kiwi(ctx: &mut Context, msg: &Message) -> CommandResult {
+// #[command]
+// fn kiwi(ctx: &mut Context, msg: &Message) -> CommandResult {
 
-}
+// }
