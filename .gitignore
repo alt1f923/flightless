@@ -1,3 +1,3 @@
-/target
+Rust - Serenity 2019/target
 **/*.rs.bk
-startbot.sh
+**/startbot.sh
