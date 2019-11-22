@@ -104,16 +104,16 @@ class Flightless(discord.Client):
         fields = [["Alias", field_one, True], ["Command/Tag", field_two, True]]
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'  
 
-    async def top_command(self, message):
+    async def top_command(self, input, message):
         await self.niy_command("Top", message.channel)
 
-    async def time_command(self, message):
+    async def time_command(self, input, message):
         await self.niy_command("Time", message.channel)
 
-    async def translate_command(self, message):
+    async def translate_command(self, input, message):
         await self.niy_command("Translate", message.channel)
 
-    async def game_server_command(self, message):
+    async def game_server_command(self, input, message):
         await self.niy_command("Game server", message.channel)
 
     async def niy_command(self, command, channel): # Not implemented yet command
