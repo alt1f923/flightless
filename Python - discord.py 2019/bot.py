@@ -23,7 +23,12 @@ class Flightless(discord.Client):
         self.parser  = compile("f/{} {}")
         self.aliases = {} # Aliases for existing commands, both user submitted and not
         self.bc      = {} # Basic commands, just text replies, user created commands stored in here too
-        self.nbc     = {"tags": self.tags_command} # Non basic commands, need functions and discord interactions to complete
+        self.nbc     = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
+                        "aliases": self.aliases_command,
+                        "top": self.top_command,
+                        "time": self.time_command,
+                        "translate": self.translate_command,
+                        "game": self.game_server_command}
 
     async def on_ready(self):
         print(
@@ -37,21 +42,73 @@ class Flightless(discord.Client):
             if not message.author.bot:
                 # TODO: Add blacklist check here
                 # TODO: Go through parse source code to find a tidy solution for problem below
+                # TODO: Just use regex
                 try:
                     command, input = self.parser.parse(message.content + "  ") # Shhh don't tell anyone, it's 1am and I've been looking at the one page for parse to find a better solution :)
                     if self.alias_exists(command):
+                        command = self.alias(command)
                         if command_tag := self.bc.get(command, False):
-                            await self.send_message(command_tag, message.channel)
+                            await self.send_tag(command_tag, message.channel)
                         else:
-                            await self.nbc[command](input)
+                            await self.nbc[command](input, message)
                 except TypeError: # Message doesn't fit parser format
                     pass
 
-    def tags_command(self, input):
+    async def send_tag(self, tag, channel):
+        await self.send_embed(channel, content=tag.reply, footer=f"{self.get_user(tag.owner)}'s tag")
+        
+    async def send_embed(self, channel, content=None, title=None, footer=None, fields=None):
+        # TODO: Add code to limit how much content can be sent to avoid exceeding byte limit
+        if not title:
+            title = self.user.name.capitalize()
+        embed = discord.Embed(colour=discord.Colour(0x985F35), description=content, timestamp=datetime.utcnow())
+        embed.set_author(name=title, icon_url=self.user.avatar_url)
+        if fields:
+            for field in fields: # field = [name, value, inline]
+                embed.add_field(name=field[0], value=field[1], inline=field[2])
+        if not footer:
+            footer = f"{self.user.name.capitalize()} running in {channel.guild.name}"
+        embed.set_footer(text=footer)
+        await channel.send(embed=embed)
+
+    async def tags_command(self, input, message):
+        fields = []
+        
         content = ""
         for command in self.bc.keys():
             content += f"{command}\n"
-        return content
+        fields.append(["Tags", content, True])
+        content = ""
+        for command in self.nbc.keys():
+            content += f"{command}\n"
+        fields.append(["Commands", content, True])
+        
+        await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
+
+    async def aliases_command(self, input, message):
+        field_one = ""
+        field_two = ""
+        for alias in self.aliases.keys():
+            field_one += f"{alias}\n"
+            field_two += f"{self.aliases[alias]}\n"
+        fields = [["Alias", field_one, True], ["Command/Tag", field_two, True]]
+        await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
+        
+
+    async def top_command(self, input, message):
+        await self.niy_command("Top", message.channel)
+
+    async def time_command(self, input, message):
+        await self.niy_command("Time", message.channel)
+
+    async def translate_command(self, input, message):
+        await self.niy_command("Translate", message.channel)
+
+    async def game_server_command(self, input, message):
+        await self.niy_command("Game server", message.channel)
+
+    async def niy_command(self, command, channel): # Not implemented yet command
+        await self.send_embed(channel, content=f"{command} is not implemented yet.")
 
     def load_commands(self):
         with shelve.open("commands") as commands:
@@ -102,13 +159,6 @@ class Flightless(discord.Client):
     def alias(self, name):
         """Dictionary lookup to find a command from it's alias, if found it will return the first value of alias (commands name) otherwise will return base command name"""
         return self.aliases.get(name, name)
-
-    async def send_message(self, tag, channel):
-        embed = discord.Embed(colour=discord.Colour(0x985F35), description=tag.reply, timestamp=datetime.utcnow())
-        embed.set_author(name=self.user.name.capitalize(), icon_url=self.user.avatar_url)
-        embed.set_footer(text=f"{self.get_user(tag.owner)}'s tag")
-        await channel.send(embed=embed)
-
 
     async def start(self):
         print("Logging in...")
