@@ -2,7 +2,7 @@ import discord
 import asyncio
 import sys
 from datetime import datetime
-from parse import compile, parse
+import re
 import shelve
 
 class CommandTag():
@@ -20,10 +20,11 @@ class Flightless(discord.Client):
         super().__init__()
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token   = token
-        self.parser  = compile("f/{} {}")
+        self.parser  = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
         self.aliases = {} # Aliases for existing commands, both user submitted and not
         self.bc      = {} # Basic commands, just text replies, user created commands stored in here too
         self.nbc     = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
+                        "tag": self.tag_command,
                         "aliases": self.aliases_command,
                         "top": self.top_command,
                         "time": self.time_command,
@@ -41,18 +42,15 @@ class Flightless(discord.Client):
         if message.guild.id == 198337653412855808: # So that no server but mine will get interactions with my bot while testing --THIS IS TEMPORARY--
             if not message.author.bot:
                 # TODO: Add blacklist check here
-                # TODO: Go through parse source code to find a tidy solution for problem below
-                # TODO: Just use regex
-                try:
-                    command, input = self.parser.parse(message.content + "  ") # Shhh don't tell anyone, it's 1am and I've been looking at the one page for parse to find a better solution :)
+                if parsed_message := self.parser.match(message.content):
+                    parsed_message = parsed_message.groups()
+                    command = parsed_message[0]
                     if self.alias_exists(command):
                         command = self.alias(command)
                         if command_tag := self.bc.get(command, False):
                             await self.send_tag(command_tag, message.channel)
                         else:
-                            await self.nbc[command](input, message)
-                except TypeError: # Message doesn't fit parser format
-                    pass
+                            await self.nbc[command](parsed_message, message)
 
     async def send_tag(self, tag, channel):
         await self.send_embed(channel, content=tag.reply, footer=f"{self.get_user(tag.owner)}'s tag")
@@ -85,6 +83,18 @@ class Flightless(discord.Client):
         
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
 
+    async def tag_command(self, input, message):
+        if (x := len(input)) == 1:
+            await self.tag_command(None, message)
+        elif x == 3:
+            if message.author.id == 165765321268002816:
+                # TODO: Implement delete
+                if input[1].lower() == "delete":
+                    pass
+        elif x == 4:
+            if input[1].lower() == "create":
+                self.new_command(owner=message.author.id, name=input[2].lower(), reply=input[3]) # owner, name, reply
+
     async def aliases_command(self, input, message):
         field_one = ""
         field_two = ""
@@ -92,19 +102,18 @@ class Flightless(discord.Client):
             field_one += f"{alias}\n"
             field_two += f"{self.aliases[alias]}\n"
         fields = [["Alias", field_one, True], ["Command/Tag", field_two, True]]
-        await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
-        
+        await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'  
 
-    async def top_command(self, input, message):
+    async def top_command(self, message):
         await self.niy_command("Top", message.channel)
 
-    async def time_command(self, input, message):
+    async def time_command(self, message):
         await self.niy_command("Time", message.channel)
 
-    async def translate_command(self, input, message):
+    async def translate_command(self, message):
         await self.niy_command("Translate", message.channel)
 
-    async def game_server_command(self, input, message):
+    async def game_server_command(self, message):
         await self.niy_command("Game server", message.channel)
 
     async def niy_command(self, command, channel): # Not implemented yet command
@@ -132,7 +141,7 @@ class Flightless(discord.Client):
 
     def new_command(self, owner, name, reply):
         if not self.alias_exists(name):
-            self.bc[name] = CommandTag(owner, name, reply)
+            self.bc[name] = CommandTag(reply, name, owner) # reply, name, owner
             self.save_commands()
             return True
         return False
