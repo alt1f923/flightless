@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import shelve
 
-class CommandTag():
+class Tag():
     def __init__(self, reply, name, owner=165765321268002816):
         self.reply = reply
         self.name = name
@@ -93,7 +93,7 @@ class Flightless(discord.Client):
                     pass
         elif x == 4:
             if input[1].lower() == "create":
-                self.new_command(owner=message.author.id, name=input[2].lower(), reply=input[3]) # owner, name, reply
+                self.new_tag(owner=message.author.id, name=input[2].lower(), reply=input[3]) # owner, name, reply
 
     async def aliases_command(self, input, message):
         field_one = ""
@@ -119,40 +119,67 @@ class Flightless(discord.Client):
     async def niy_command(self, command, channel): # Not implemented yet command
         await self.send_embed(channel, content=f"{command} is not implemented yet.")
 
-    def load_commands(self):
-        with shelve.open("commands") as commands:
-            for key in commands.keys():
-                self.bc[key] = commands[key]
-        commands.close()
+    def load_tags(self):
+        with shelve.open("tags") as tags:
+            for key in tags.keys():
+                self.bc[key] = tags[key]
+        tags.close()
         with shelve.open("aliases") as aliases:
             for key in aliases.keys():
                 self.aliases[key] = aliases[key]
         aliases.close()
 
-    def save_commands(self):
-        with shelve.open("commands") as commands:
+    def save_tags(self):
+        with shelve.open("tags") as tags:
             for key in self.bc.keys():
-                commands[key] = self.bc[key]
-        commands.close()
+                tags[key] = self.bc[key]
+        tags.close()
         with shelve.open("aliases") as aliases:
             for key in self.aliases.keys():
                 aliases[key] = self.aliases[key]
         aliases.close()
 
-    def new_command(self, owner, name, reply):
+    def new_tag(self, owner, name, reply):
         if not self.alias_exists(name):
-            self.bc[name] = CommandTag(reply, name, owner) # reply, name, owner
-            self.save_commands()
+            self.bc[name] = Tag(reply, name, owner) # reply, name, owner
+            self.save_tags()
             return True
         return False
 
-    def edit_command(self, name, user, new_reply):
-        if command := self.bc.get(self.alias(name), False):
-            if user in [command.owner, 165765321268002816]:
-                command.reply = new_reply
-                self.save_commands()
+    def edit_tag(self, name, user, new_reply):
+        if tag := self.get_tag(name): # Excluding non-basic commands
+            if self.is_tag_owner(tag, user):
+                tag.reply = new_reply
+                self.save_tags()
                 return True
         return False
+
+    def delete_tag(self, name, user):
+        if tag := self.get_tag(name):
+            if self.is_tag_owner(tag, user):
+                del self.bc[tag.name]
+                return_code = self.delete_aliases(name)
+                if return_code:
+                    self.save_tags()
+                else:
+                    self.load_tags()
+                return return_code
+        return False
+
+    def delete_aliases(self, name):
+        try:
+            for alias in self.aliases.keys():
+                if self.aliases[alias] == name:
+                    del self.aliases[alias]
+            return True
+        except:
+            return False
+
+    def get_tag(name):
+        return self.bc.get(self.alias(name), False) # Excluding non-basic commands
+
+    def is_tag_owner(self, tag, user):
+        return user in [tag.owner, 165765321268002816]
 
     def alias_exists(self, alias):
         name = self.alias(alias)
@@ -175,7 +202,7 @@ class Flightless(discord.Client):
             await self.login(self.token, bot=True)
             # Load the database of commands now that a connection to Discord has been established and the bot is logged in
             print("Loading commands...")
-            self.load_commands()
+            self.load_tags()
             print(f"Loaded {len(self.bc)} commands:\n{[*self.bc]}")
             print("Connecting...")
             await self.connect(reconnect=True)
@@ -194,7 +221,7 @@ class Flightless(discord.Client):
         else:
             # After the connection has ended, save the commands
             print("Saving commands...")
-            self.save_commands()
+            self.save_tags()
             print("Saved")
 
 

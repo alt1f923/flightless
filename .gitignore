@@ -1,6 +1,6 @@
 **/target
 **/*.rs.bk
 **/startbot.sh
-**/commands.*
+**/tags.*
 **/aliases.*
 **/__pycache__
