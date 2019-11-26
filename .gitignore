@@ -1,7 +1,4 @@
-**/target
-**/*.rs.bk
 **/startbot.sh
 **/tags.*
 **/aliases.*
 **/__pycache__
-Rust - Serenity 2019\*
