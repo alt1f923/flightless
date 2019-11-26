@@ -84,16 +84,24 @@ class Flightless(discord.Client):
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
 
     async def tag_command(self, input, message):
-        if (x := len(input)) == 1:
-            await self.tag_command(None, message)
-        elif x == 3:
-            if message.author.id == 165765321268002816:
-                # TODO: Implement delete
-                if input[1].lower() == "delete":
-                    pass
-        elif x == 4:
-            if input[1].lower() == "create":
-                self.new_tag(owner=message.author.id, name=input[2].lower(), reply=input[3]) # owner, name, reply
+        if (instruction := input[1].lower()) == "create":
+            if self.new_tag(owner=message.author.id, name=(name := input[2].lower()), reply=input[3]): # owner, name, reply
+                await self.send_tag(self.bc[name], message.channel)
+            else:
+                await self.send_embed(message.channel, content="Command could not be created.\nPlease make sure it's name is not already in use.")
+        elif instruction == "edit":
+            if self.edit_tag((name := input[2].lower()), message.author.id, input[3]): # name, user, new_reply
+                await self.send_tag(self.bc[name], message.channel)
+            else:
+                await self.send_embed(message.channel, content="Command could not be edited.\nYou can only edit tags that you own.")
+        elif instruction == "delete":
+                if self.delete_tag((name := input[2].lower()), message.author.id): # name, user
+                    await self.send_embed(message.channel, content=f"Command {name} deleted.")
+                else:
+                    await self.send_embed(message.channel, content="Command could not be deleted.\nYou can only delete tags that you own or that exist.")
+        else:
+            await self.tags_command(None, message)
+
 
     async def aliases_command(self, input, message):
         field_one = ""
@@ -175,7 +183,7 @@ class Flightless(discord.Client):
         except:
             return False
 
-    def get_tag(name):
+    def get_tag(self, name):
         return self.bc.get(self.alias(name), False) # Excluding non-basic commands
 
     def is_tag_owner(self, tag, user):
