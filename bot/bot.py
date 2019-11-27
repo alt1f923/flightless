@@ -21,8 +21,8 @@ class Flightless(discord.Client):
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token   = token
         self.parser  = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
-        self.aliases = {} # Aliases for existing commands, both user submitted and not
-        self.bc      = {} # Basic commands, just text replies, user created commands stored in here too
+        self.aliases = {} # Aliases for existing commands, both user submitted and not, filled by loading from shelve
+        self.bc      = {} # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
         self.nbc     = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
                         "tag": self.tag_command,
                         "aliases": self.aliases_command,
@@ -73,8 +73,8 @@ class Flightless(discord.Client):
         fields = []
         
         content = ""
-        for command in self.bc.keys():
-            content += f"{command}\n"
+        for tag in self.bc.keys():
+            content += f"{tag}\n"
         fields.append(["Tags", content, True])
         content = ""
         for command in self.nbc.keys():
@@ -88,20 +88,19 @@ class Flightless(discord.Client):
             if self.new_tag(owner=message.author.id, name=(name := input[2].lower()), reply=input[3]): # owner, name, reply
                 await self.send_tag(self.bc[name], message.channel)
             else:
-                await self.send_embed(message.channel, content="Command could not be created.\nPlease make sure it's name is not already in use.")
+                await self.send_embed(message.channel, content="Tag could not be created.\nPlease make sure it's name is not already in use.")
         elif instruction == "edit":
             if self.edit_tag((name := input[2].lower()), message.author.id, input[3]): # name, user, new_reply
                 await self.send_tag(self.bc[name], message.channel)
             else:
-                await self.send_embed(message.channel, content="Command could not be edited.\nYou can only edit tags that you own.")
+                await self.send_embed(message.channel, content="Tag could not be edited.\nYou can only edit tags that you own or that exist.")
         elif instruction == "delete":
                 if self.delete_tag((name := input[2].lower()), message.author.id): # name, user
-                    await self.send_embed(message.channel, content=f"Command {name} deleted.")
+                    await self.send_embed(message.channel, content=f"Tag `{name}` deleted.")
                 else:
-                    await self.send_embed(message.channel, content="Command could not be deleted.\nYou can only delete tags that you own or that exist.")
+                    await self.send_embed(message.channel, content="Tag could not be deleted.\nYou can only delete tags that you own or that exist.")
         else:
             await self.tags_command(None, message)
-
 
     async def aliases_command(self, input, message):
         field_one = ""
@@ -122,7 +121,7 @@ class Flightless(discord.Client):
         await self.niy_command("Translate", message.channel)
 
     async def game_server_command(self, input, message):
-        await self.niy_command("Game server", message.channel)
+        await self.niy_command("Game server hosting and management beta", message.channel)
 
     async def niy_command(self, command, channel): # Not implemented yet command
         await self.send_embed(channel, content=f"{command} is not implemented yet.")
@@ -174,15 +173,6 @@ class Flightless(discord.Client):
                 return return_code
         return False
 
-    def delete_aliases(self, name):
-        try:
-            for alias in self.aliases.keys():
-                if self.aliases[alias] == name:
-                    del self.aliases[alias]
-            return True
-        except:
-            return False
-
     def get_tag(self, name):
         return self.bc.get(self.alias(name), False) # Excluding non-basic commands
 
@@ -199,6 +189,15 @@ class Flightless(discord.Client):
                 self.aliases[alias] = name
                 return True
         return False
+    
+    def delete_aliases(self, name):
+        try:
+            for alias in self.aliases.keys():
+                if self.aliases[alias] == name:
+                    del self.aliases[alias]
+            return True
+        except:
+            return False
 
     def alias(self, name):
         """Dictionary lookup to find a command from it's alias, if found it will return the first value of alias (commands name) otherwise will return base command name"""
