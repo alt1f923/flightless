@@ -8,10 +8,10 @@ import requests                 # For checking if urls to images exist for tags
 
 class Tag():
     def __init__(self, reply, name, owner=165765321268002816):
-        self.reply  = reply
-        self.name   = name
-        self.owner  = owner
-        self.date   = datetime.now()
+        self.reply  = reply             # This is the text that is returned to the user in the embed
+        self.name   = name              # Name of the tag, same as key 
+        self.owner  = owner             # id int of user who created the tag
+        self.date   = datetime.now()    # datetime time object of tags creation
 
     def __str__(self):
         return f"Command: {self.name}\nOwner id: {self.owner}\nCreated: {self.date.strftime('%y/%m/%d %H:%M:%S')}"
@@ -21,11 +21,16 @@ class Flightless(discord.Client):
         super().__init__()
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token               = token
+        # Regex following the format of "f/word word word word"
         self.message_parser      = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
+        # Regex following the format of "https://www.website.com/image.png"
         self.image_url_parser    = re.compile(r"https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png)")
-        self.aliases             = {} # Aliases for existing commands, both user submitted and not, filled by loading from shelve
-        self.bc                  = {} # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
-        self.nbc                 = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
+        # Aliases for existing commands, both user submitted and not, filled by loading from shelve
+        self.aliases             = {}
+        # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
+        self.bc                  = {}
+        # Non basic commands, need functions and discord interactions to complete              
+        self.nbc                 = {"tags": self.tags_command,
                                     "tag": self.tag_command,
                                     "aliases": self.aliases_command,
                                     "top": self.top_command,
