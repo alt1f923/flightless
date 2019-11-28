@@ -1,16 +1,17 @@
-import discord
-import asyncio
-import sys
-from datetime import datetime
-import re
-import shelve
+import discord                  # Interacting with the Discord API
+import asyncio                  # For creating async loops
+import sys                      # For sending error messages to stderr and accessing argv
+from datetime import datetime   # For adding UTC timestamps to embeds
+import re                       # Regex for parsing text for command and url detection
+import shelve                   # For persistency regarding tags
+import requests                 # For checking if urls to images exist for tags
 
 class Tag():
     def __init__(self, reply, name, owner=165765321268002816):
-        self.reply = reply
-        self.name = name
-        self.owner = owner
-        self.date = datetime.now()
+        self.reply  = reply
+        self.name   = name
+        self.owner  = owner
+        self.date   = datetime.now()
 
     def __str__(self):
         return f"Command: {self.name}\nOwner id: {self.owner}\nCreated: {self.date.strftime('%y/%m/%d %H:%M:%S')}"
@@ -19,17 +20,18 @@ class Flightless(discord.Client):
     def __init__(self, token):
         super().__init__()
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
-        self.token   = token
-        self.parser  = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
-        self.aliases = {} # Aliases for existing commands, both user submitted and not, filled by loading from shelve
-        self.bc      = {} # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
-        self.nbc     = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
-                        "tag": self.tag_command,
-                        "aliases": self.aliases_command,
-                        "top": self.top_command,
-                        "time": self.time_command,
-                        "translate": self.translate_command,
-                        "game": self.game_server_command}
+        self.token               = token
+        self.message_parser      = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
+        self.image_url_parser    = re.compile(r"https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png)")
+        self.aliases             = {} # Aliases for existing commands, both user submitted and not, filled by loading from shelve
+        self.bc                  = {} # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
+        self.nbc                 = {"tags": self.tags_command, # Non basic commands, need functions and discord interactions to complete
+                                    "tag": self.tag_command,
+                                    "aliases": self.aliases_command,
+                                    "top": self.top_command,
+                                    "time": self.time_command,
+                                    "translate": self.translate_command,
+                                    "game": self.game_server_command}
 
     async def on_ready(self):
         print(
@@ -42,7 +44,7 @@ class Flightless(discord.Client):
         if message.guild.id == 198337653412855808: # So that no server but mine will get interactions with my bot while testing --THIS IS TEMPORARY--
             if not message.author.bot:
                 # TODO: Add blacklist check here
-                if parsed_message := self.parser.match(message.content):
+                if parsed_message := self.message_parser.match(message.content):
                     parsed_message = parsed_message.groups()
                     command = parsed_message[0]
                     if self.alias_exists(command):
@@ -51,6 +53,9 @@ class Flightless(discord.Client):
                             await self.send_tag(command_tag, message.channel)
                         else:
                             await self.nbc[command](parsed_message, message)
+
+    def image_exists(self, url):
+        return requests.head(url).status_code == 200 # 200 status code means url exists, consider adding 301, 302, 303, 307, 308
 
     async def send_tag(self, tag, channel):
         await self.send_embed(channel, content=tag.reply, footer=f"{self.get_user(tag.owner)}'s tag")
@@ -84,6 +89,7 @@ class Flightless(discord.Client):
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'
 
     async def tag_command(self, input, message):
+        # TODO: Add request feature and approval system
         if (instruction := input[1].lower()) == "create":
             if self.new_tag(owner=message.author.id, name=(name := input[2].lower()), reply=input[3]): # owner, name, reply
                 await self.send_tag(self.bc[name], message.channel)
@@ -226,8 +232,8 @@ class Flightless(discord.Client):
             # Connection terminated after it was established, probably caused by internet dropping out, reconnect should take care of this
             print("The websocket connection has been terminated", file=sys.stderr)
         else:
-            # After the connection has ended, save the commands
-            print("Saving commands...")
+            # After the connection has ended, save the tags, this is redunant as any edit or new tag will be saved as part of the process of creation/change however, just a precaution
+            print("Saving tags...")
             self.save_tags()
             print("Saved")
 
