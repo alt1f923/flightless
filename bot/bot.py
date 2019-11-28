@@ -95,10 +95,10 @@ class Flightless(discord.Client):
             else:
                 await self.send_embed(message.channel, content="Tag could not be edited.\nYou can only edit tags that you own or that exist.")
         elif instruction == "delete":
-                if self.delete_tag((name := input[2].lower()), message.author.id): # name, user
-                    await self.send_embed(message.channel, content=f"Tag `{name}` deleted.")
-                else:
-                    await self.send_embed(message.channel, content="Tag could not be deleted.\nYou can only delete tags that you own or that exist.")
+            if self.delete_tag((name := input[2].lower()), message.author.id): # name, user
+                await self.send_embed(message.channel, content=f"Tag `{name}` deleted.")
+            else:
+                await self.send_embed(message.channel, content="Tag could not be deleted.\nYou can only delete tags that you own or that exist.")
         else:
             await self.tags_command(None, message)
 
