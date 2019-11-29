@@ -40,6 +40,7 @@ class Flightless(discord.Client):
                                     "time": self.time_command,
                                     "translate": self.translate_command,
                                     "game": self.game_server_command}
+        self.translator = Translator()
 
     async def on_ready(self):
         print(
@@ -146,7 +147,10 @@ class Flightless(discord.Client):
         await self.niy_command("Time", message.channel)
 
     async def translate_command(self, input, message):
-        
+        # TODO: add ability to change destination and set src lang and error handling
+        translated = self.translator.translate((text := input[1] + input[2] + input[3]))
+        fields = [["Original", text, False], ["Translated", translated.text, False]]
+        await self.send_embed(message.channel, title="Translate", footer=f"Translated from {translated.src} to {translated.dest} using Google Translate", fields=fields)
 
     async def game_server_command(self, input, message):
         await self.niy_command("Game server hosting and management beta", message.channel)
