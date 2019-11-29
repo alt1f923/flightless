@@ -1,17 +1,19 @@
-import discord                  # Interacting with the Discord API
-import asyncio                  # For creating async loops
-import sys                      # For sending error messages to stderr and accessing argv
-from datetime import datetime   # For adding UTC timestamps to embeds
-import re                       # Regex for parsing text for command and url detection
-import shelve                   # For persistency regarding tags
-import requests                 # For checking if urls to images exist for tags
+import discord                          # Interacting with the Discord API
+import asyncio                          # For creating async loops
+import sys                              # For sending error messages to stderr and accessing argv
+from datetime import datetime           # For adding UTC timestamps to embeds
+import re                               # Regex for parsing text for command and url detection
+import shelve                           # For persistency regarding tags
+import requests                         # For checking if urls to images exist for tags
+from googletrans import Translator      # Free (unofficial) google translate API https://github.com/ssut/py-googletrans
 
 class Tag():
-    def __init__(self, reply, name, owner=165765321268002816):
+    def __init__(self, name, owner=165765321268002816, reply=None, url=None):
         self.reply  = reply             # This is the text that is returned to the user in the embed
         self.name   = name              # Name of the tag, same as key 
-        self.owner  = owner             # id int of user who created the tag
-        self.date   = datetime.now()    # datetime time object of tags creation
+        self.owner  = owner             # ID int of user who created the tag
+        self.date   = datetime.now()    # Datetime time object of tags creation
+        self.image  = url               # Image from message content, will be shown as an embed thumbnail
 
     def __str__(self):
         return f"Command: {self.name}\nOwner id: {self.owner}\nCreated: {self.date.strftime('%y/%m/%d %H:%M:%S')}"
@@ -24,7 +26,8 @@ class Flightless(discord.Client):
         # Regex following the format of "f/word word word word"
         self.message_parser      = re.compile(r"^f/([a-zA-Z]+) *([a-zA-Z]*) *([a-zA-Z]*) *(.*)$")
         # Regex following the format of "https://www.website.com/image.png"
-        self.image_url_parser    = re.compile(r"https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png)")
+        # TODO: []() exclusion
+        self.image_url_parser    = re.compile(r"^(.*)(https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png))( ?.*)$")
         # Aliases for existing commands, both user submitted and not, filled by loading from shelve
         self.aliases             = {}
         # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
@@ -59,13 +62,25 @@ class Flightless(discord.Client):
                         else:
                             await self.nbc[command](parsed_message, message)
 
+    def seperate_url(self, content):
+        url = None
+        if parsed_message := self.image_url_parser.match(content):
+            parsed_message = parsed_message.groups()
+            url = parsed_message[1]
+            content = parsed_message[0] + parsed_message[2]
+        return url, content
+
     def image_exists(self, url):
         return requests.head(url).status_code == 200 # 200 status code means url exists, consider adding 301, 302, 303, 307, 308
 
     async def send_tag(self, tag, channel):
-        await self.send_embed(channel, content=tag.reply, footer=f"{self.get_user(tag.owner)}'s tag")
+        if tag.image:
+            if not self.image_exists(tag.image):
+                tag.image = None
+                self.save_tags()
+        await self.send_embed(channel, content=tag.reply, footer=f"{self.get_user(tag.owner)}'s tag", image=tag.image)
         
-    async def send_embed(self, channel, content=None, title=None, footer=None, fields=None):
+    async def send_embed(self, channel, content=None, title=None, footer=None, fields=None, image=None):
         # TODO: Add code to limit how much content can be sent to avoid exceeding byte limit
         if not title:
             title = self.user.name.capitalize()
@@ -74,6 +89,8 @@ class Flightless(discord.Client):
         if fields:
             for field in fields: # field = [name, value, inline]
                 embed.add_field(name=field[0], value=field[1], inline=field[2])
+        if image:
+            embed.set_image(url=image)
         if not footer:
             footer = f"{self.user.name.capitalize()} running in {channel.guild.name}"
         embed.set_footer(text=footer)
@@ -129,7 +146,7 @@ class Flightless(discord.Client):
         await self.niy_command("Time", message.channel)
 
     async def translate_command(self, input, message):
-        await self.niy_command("Translate", message.channel)
+        
 
     async def game_server_command(self, input, message):
         await self.niy_command("Game server hosting and management beta", message.channel)
@@ -149,6 +166,7 @@ class Flightless(discord.Client):
 
     def save_tags(self):
         with shelve.open("tags") as tags:
+            tags.clear()
             for key in self.bc.keys():
                 tags[key] = self.bc[key]
         tags.close()
@@ -158,15 +176,32 @@ class Flightless(discord.Client):
         aliases.close()
 
     def new_tag(self, owner, name, reply):
-        if not self.alias_exists(name):
-            self.bc[name] = Tag(reply, name, owner) # reply, name, owner
-            self.save_tags()
-            return True
-        return False
+        if name.strip():
+            if not self.alias_exists(name):
+                url, reply = self.seperate_url(reply)
+                if url:
+                    if reply:
+                        self.bc[name] = Tag(name, owner, reply=reply, url=url) # name, owner, reply, url
+                    else:
+                        self.bc[name] = Tag(name, owner, url=url) # name, owner, url
+                else:
+                    self.bc[name] = Tag(name, owner, reply=reply) # name, owner, reply
+                self.save_tags()
+                return True
+            return False
 
     def edit_tag(self, name, user, new_reply):
         if tag := self.get_tag(name): # Excluding non-basic commands
             if self.is_tag_owner(tag, user):
+                url, reply = self.seperate_url(new_reply)
+                if url:
+                    tag.image = url
+                else:
+                    tag.image = None
+                if reply:
+                    tag.reply = reply
+                else:
+                    tag.reply = None
                 tag.reply = new_reply
                 self.save_tags()
                 return True
