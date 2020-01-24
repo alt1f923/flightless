@@ -31,7 +31,7 @@ class Flightless(discord.Client):
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token               = token
         # Regex following the format of "f/word word word word"
-        self.message_parser      = re.compile(r"^f/(\w+) *(\w*) *(\w*) *(.*)$")
+        self.message_parser      = re.compile(r"^f/(\w+) *(\w*) *(\w*) *((.*\n*\r*)*)$")
         # Regex following the format of "https://www.website.com/image.png"
         # TODO: []() exclusion
         self.image_url_parser    = re.compile(r"^(.*)(https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png))( ?.*)$")
@@ -46,13 +46,13 @@ class Flightless(discord.Client):
                                     "top": self.top_command,
                                     "time": self.time_command,
                                     "translate": self.translate_command,
-                                    "game": self.game_server_command}
+                                    "help": self.help_command}
         # Dictionary for storing the score data for the top command
         self.guilds_score        = {}
         # Translator from googletrans, used for translate command 
         self.translator          = Translator()
         # Ready, can use bot once this is True
-        self.ready               = False
+        self.top_ready               = False
 
     async def on_ready(self):
 
@@ -80,33 +80,30 @@ class Flightless(discord.Client):
                 except discord.errors.Forbidden:
                     continue
             self.guilds_score[guild.id] = [total, users]
-
-        await self.change_presence(status=discord.Status.online)
-        self.ready = True
+        self.top_ready = True
+        print("Top command is ready")
 
     async def on_message(self, message):
-        if self.ready:
-            if message.guild.id == 198337653412855808: # So that no server but mine will get interactions with my bot while testing --THIS IS TEMPORARY--
-                if not message.author.bot:
-                    # TODO: Add blacklist check here
-                    if parsed_message := self.message_parser.match(message.content):
-                        parsed_message = parsed_message.groups()
-                        command = parsed_message[0]
-                        if self.alias_exists(command):
-                            command = self.alias(command)
-                            if command_tag := self.bc.get(command, False):
-                                await self.send_tag(command_tag, message.channel)
-                            else:
-                                await self.nbc[command](parsed_message, message)
-
-                    if message.guild.id not in self.guilds_score.keys():
-                        self.guilds_score[message.guild.id] = [1, {message.author.id: [1, message.author.name, message.author.colour, message.author.roles[-1].id]}]
+        if not message.author.bot:
+            # TODO: Add blacklist check here
+            if parsed_message := self.message_parser.match(message.content):
+                parsed_message = parsed_message.groups()
+                command = parsed_message[0]
+                if self.alias_exists(command):
+                    command = self.alias(command)
+                    if command_tag := self.bc.get(command, False):
+                        await self.send_tag(command_tag, message.channel)
                     else:
-                        self.guilds_score[message.guild.id][0] += 1
-                        if message.author.id not in self.guilds_score[message.guild.id][1].keys():
-                            self.guilds_score[message.guild.id][1][message.author.id][0] = 1
-                        else:
-                            self.guilds_score[message.guild.id][1][message.author.id][0] += 1
+                        await self.nbc[command](parsed_message, message)
+            if not self.top_ready:
+                if message.guild.id not in self.guilds_score.keys():
+                    self.guilds_score[message.guild.id] = [1, {message.author.id: [1, message.author.name, message.author.colour, message.author.roles[-1].id]}]
+                else:
+                    self.guilds_score[message.guild.id][0] += 1
+                    if message.author.id not in self.guilds_score[message.guild.id][1].keys():
+                        self.guilds_score[message.guild.id][1][message.author.id] = [1, {message.author.id: [1, message.author.name, message.author.colour, message.author.roles[-1].id]}]
+                    else:
+                        self.guilds_score[message.guild.id][1][message.author.id][0] += 1
 
     def seperate_url(self, content):
         url = None
@@ -186,74 +183,77 @@ class Flightless(discord.Client):
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'  
 
     async def top_command(self, input, message):
-        users = self.guilds_score[message.guild.id]
-        total = users[0]
-        users = users[1]
+        if self.top_ready:
+            users = self.guilds_score[message.guild.id]
+            total = users[0]
+            users = users[1]
 
-        values = {}
-        labels = {}
-        colours = {}
-        other_users = 0
+            values = {}
+            labels = {}
+            colours = {}
+            other_users = 0
 
-        for user in users.keys():
-            score, name, colour, role = users[user]
-            if (percentage := score/total) < 0.005:
-                other_users += score 
-            else: 
-                if role not in values.keys():
-                    values[role] = [score]
-                    labels[role] = [f"{name} {(percentage * 100):.2f}%"]
-                    colours[role] = [plot_colour(colour)]
+            for user in users.keys():
+                score, name, colour, role = users[user]
+                if (percentage := score/total) < 0.005:
+                    other_users += score 
+                else: 
+                    if role not in values.keys():
+                        values[role] = [score]
+                        labels[role] = [f"{name} {(percentage * 100):.2f}%"]
+                        colours[role] = [plot_colour(colour)]
+                    else:
+                        values[role].insert((index := bisect(values[role], score)), score)
+                        labels[role].insert(index, f"{name} {(percentage * 100):.2f}%")
+                        colours[role].insert(index, plot_colour(colour))
+            x = []
+            y = []
+            z = []
+            
+            for key in values.keys():
+                x += values[key]
+                label = ""
+                if len(labels[key]) > 1:
+                    label += f"{message.guild.get_role(key).name}\n\n"
+                for item in labels[key]:
+                    label += f"{item}\n"
+                y.append([label.strip(), len(labels[key])])
+                z += colours[key]
+
+            if other_users:
+                x.append(other_users)
+                y.append([f"Other users {(other_users/total * 100):.2f}%", 1])
+                z.append([0, 0, 0])
+
+            ax = plt.subplots(figsize=(10, 9), dpi=180, subplot_kw={"aspect" : "equal"})[1]
+
+            wedges = ax.pie(x, colors=z, wedgeprops={"width" : 0.5, "edgecolor":"0", 'linewidth': 1, 'linestyle': 'solid', 'antialiased': True}, startangle=0, counterclock=False)[0]
+
+            kw = {"arrowprops" : {"arrowstyle" : "-"}, "bbox" : {"boxstyle" : "square,pad=0.6", "fc" : "w", "ec" : "k", "lw" : 0.72}, "zorder" : 0, "va" : "center"}
+
+            labels = y.copy()
+            count = 1
+            for p in wedges:
+                ang = (p.theta2 - p.theta1)/2. + p.theta1
+                y = np.sin(np.deg2rad(ang))
+                x = np.cos(np.deg2rad(ang))
+                horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                connectionstyle = "angle,angleA=0,angleB={}".format(ang)
+                kw["arrowprops"].update({"connectionstyle": connectionstyle})
+                if count == ((labels[0][1]) // 2) + 1:
+                    ax.annotate(labels[0][0], xy=(x, y), xytext=(1.35*np.sign(x), 1.4*y), horizontalalignment = horizontalalignment, **kw)
+                    count = -(labels[0][1] - count) + 1
+                    del labels[0]
                 else:
-                    values[role].insert((index := bisect(values[role], score)), score)
-                    labels[role].insert(index, f"{name} {(percentage * 100):.2f}%")
-                    colours[role].insert(index, plot_colour(colour))
-        x = []
-        y = []
-        z = []
-        
-        for key in values.keys():
-            x += values[key]
-            label = ""
-            if len(labels[key]) > 1:
-                label += f"{message.guild.get_role(key).name}\n\n"
-            for item in labels[key]:
-                label += f"{item}\n"
-            y.append([label.strip(), len(labels[key])])
-            z += colours[key]
+                    count += 1
 
-        if other_users:
-            x.append(other_users)
-            y.append([f"Other users {(other_users/total * 100):.2f}%", 1])
-            z.append([0, 0, 0])
+            ax.set_title(f"{message.guild.name.capitalize()}")
+            plt.savefig(f"images/{message.guild.id}.png", bbox_inches="tight")
 
-        ax = plt.subplots(figsize=(10, 9), dpi=180, subplot_kw={"aspect" : "equal"})[1]
-
-        wedges = ax.pie(x, colors=z, wedgeprops={"width" : 0.5, "edgecolor":"0", 'linewidth': 1, 'linestyle': 'solid', 'antialiased': True}, startangle=0)[0]
-
-        kw = {"arrowprops" : {"arrowstyle" : "-"}, "bbox" : {"boxstyle" : "square,pad=0.6", "fc" : "w", "ec" : "k", "lw" : 0.72}, "zorder" : 0, "va" : "center"}
-
-        labels = y.copy()
-        count = 1
-        for p in wedges:
-            ang = (p.theta2 - p.theta1)/2. + p.theta1
-            y = np.sin(np.deg2rad(ang))
-            x = np.cos(np.deg2rad(ang))
-            horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
-            connectionstyle = "angle,angleA=0,angleB={}".format(ang)
-            kw["arrowprops"].update({"connectionstyle": connectionstyle})
-            if count == ((labels[0][1]) // 2) + 1:
-                ax.annotate(labels[0][0], xy=(x, y), xytext=(1.35*np.sign(x), 1.4*y), horizontalalignment = horizontalalignment, **kw)
-                count = -(labels[0][1] - count) + 1
-                del labels[0]
-            else:
-                count += 1
-
-        ax.set_title(f"{message.guild.name.capitalize()}")
-        plt.savefig(f"images/{message.guild.id}.png", bbox_inches="tight")
-
-        await message.channel.send(content=message.author.mention, 
-                                    file=discord.File(fp=open(f"images/{message.guild.id}.png", "rb"), filename=f"{message.guild.name}.png"))
+            await message.channel.send(content=message.author.mention, 
+                                        file=discord.File(fp=open(f"images/{message.guild.id}.png", "rb"), filename=f"{message.guild.name}.png"))
+        else:
+            await self.send_embed(message.channel, content="I am still counting messages for this command sorry. Try again later.")
 
     async def time_command(self, input, message):
         await self.niy_command("Time", message.channel)
@@ -264,8 +264,8 @@ class Flightless(discord.Client):
         fields = [["Original", text, False], ["Translated", translated.text, False]]
         await self.send_embed(message.channel, title="Translate", footer=f"Translated from {translated.src} to {translated.dest} using Google Translate", fields=fields)
 
-    async def game_server_command(self, input, message):
-        await self.niy_command("Game server hosting and management beta", message.channel)
+    async def help_command(self, input, message):
+        await self.niy_command("Help", message.channel)
 
     async def niy_command(self, command, channel): # Not implemented yet command
         await self.send_embed(channel, content=f"{command} is not implemented yet.")
