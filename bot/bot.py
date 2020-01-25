@@ -31,7 +31,7 @@ class Flightless(discord.Client):
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token               = token
         # Regex following the format of "f/word word word word"
-        self.message_parser      = re.compile(r"^f/(\w+) *(\w*) *(\w*) *((.*\n*\r*)*)$")
+        self.message_parser      = re.compile(r"^f/(\S+) *(\w*) *(\S*) *((.*\n*\r*)*)$")
         # Regex following the format of "https://www.website.com/image.png"
         # TODO: []() exclusion
         self.image_url_parser    = re.compile(r"^(.*)(https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png))( ?.*)$")
@@ -62,26 +62,7 @@ class Flightless(discord.Client):
             f"Serving {len(self.guilds)} guilds with a total of {len(self.users)} users",
             sep='\n')
 
-        # Counting messages by user by server for the top command
-        for guild in self.guilds[1:2]:
-            users = {}
-            total = 0
-
-            for channel in guild.text_channels:
-                try:
-                    async for message in channel.history(limit=None):
-                        if (author := message.author) in guild.members:
-                            if not author.bot:
-                                if (author_id := author.id) not in users.keys():
-                                    users[author_id] = [1, author.name, author.colour, author.roles[-1].id]
-                                else:
-                                    users[author_id][0] += 1
-                                total += 1
-                except discord.errors.Forbidden:
-                    continue
-            self.guilds_score[guild.id] = [total, users]
-        self.top_ready = True
-        print("Top command is ready")
+        await self.count_messages()
 
     async def on_message(self, message):
         if not message.author.bot:
@@ -104,6 +85,29 @@ class Flightless(discord.Client):
                         self.guilds_score[message.guild.id][1][message.author.id] = [1, {message.author.id: [1, message.author.name, message.author.colour, message.author.roles[-1].id]}]
                     else:
                         self.guilds_score[message.guild.id][1][message.author.id][0] += 1
+
+    async def count_messages(self):
+        # Counting messages by user by server for the top command
+        # TODO: Update it so each guild can use top command once its dataset in particular is ready
+        for guild in self.guilds[1:2]:
+            users = {}
+            total = 0
+
+            for channel in guild.text_channels:
+                try:
+                    async for message in channel.history(limit=None):
+                        if (author := message.author) in guild.members:
+                            if not author.bot:
+                                if (author_id := author.id) not in users.keys():
+                                    users[author_id] = [1, author.name, author.colour, author.roles[-1].id]
+                                else:
+                                    users[author_id][0] += 1
+                                total += 1
+                except discord.errors.Forbidden:
+                    continue
+            self.guilds_score[guild.id] = [total, users]
+        self.top_ready = True
+        print("Top command is ready")
 
     def seperate_url(self, content):
         url = None
@@ -172,6 +176,7 @@ class Flightless(discord.Client):
                 await self.send_embed(message.channel, content="Tag could not be deleted.\nYou can only delete tags that you own or that exist.")
         else:
             await self.tags_command(None, message)
+        
 
     async def aliases_command(self, input, message):
         field_one = ""
@@ -195,7 +200,7 @@ class Flightless(discord.Client):
 
             for user in users.keys():
                 score, name, colour, role = users[user]
-                if (percentage := score/total) < 0.005:
+                if (percentage := score/total) < 0.001:
                     other_users += score 
                 else: 
                     if role not in values.keys():
@@ -386,7 +391,7 @@ class Flightless(discord.Client):
         except discord.errors.ConnectionClosed:
             # Connection terminated after it was established, probably caused by internet dropping out, reconnect should take care of this
             print("The websocket connection has been terminated", file=sys.stderr)
-        else:
+        finally:
             # After the connection has ended, save the tags, this is redunant as any edit or new tag will be saved as part of the process of creation/change however, just a precaution
             print("Saving tags...")
             self.save_tags()
