@@ -34,7 +34,7 @@ class Flightless(discord.Client):
         self.message_parser      = re.compile(r"^f/(\S+) *(\w*) *(\S*) *((.*\n*\r*)*)$")
         # Regex following the format of "https://www.website.com/image.png"
         # TODO: []() exclusion
-        self.image_url_parser    = re.compile(r"^(.*)(https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|jpeg|webp|gif|png))( ?.*)$")
+        self.image_url_parser    = re.compile(r"^([^\2]*)(https?:\/\/(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:\/[^\/#?]+)+\.(?:(?:jp(?:g|eg)|webp|gif|png)|(?:JP(?:G|EG)|WEBP|GIF|PNG)))([^\2]*)$")
         # Aliases for existing commands, both user submitted and not, filled by loading from shelve
         self.aliases             = {}
         # Basic commands, just text replies, user created commands stored in here too, filled by loading from shelve
