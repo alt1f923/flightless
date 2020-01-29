@@ -265,7 +265,7 @@ class Flightless(discord.Client):
 
     async def translate_command(self, input, message):
         # TODO: add ability to change destination and set src lang and error handling
-        translated = self.translator.translate((text := input[1] + input[2] + input[3]))
+        translated = self.translator.translate((text := f"{input[1]} {input[2]} {input[3]}"))
         fields = [["Original", text, False], ["Translated", translated.text, False]]
         await self.send_embed(message.channel, title="Translate", footer=f"Translated from {translated.src} to {translated.dest} using Google Translate", fields=fields)
 
