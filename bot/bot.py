@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from bisect import bisect
 import numpy as np
 
+PREFIX = "f/"
+
 def plot_colour(d):
     return [d.r/255, d.g/255, d.b/255]
 
@@ -31,7 +33,7 @@ class Flightless(discord.Client):
         # The reason token is set here is so I can disconnect the bot and reconnect it without restarting the code or carrying the token around as a global
         self.token               = token
         # Regex following the format of "f/word word word word"
-        self.message_parser      = re.compile(r"^f/(\S+) *(\w*) *(\S*) *((.*\n*\r*)*)$")
+        self.message_parser      = re.compile(r"^{}(\S+) *(\w*) *(\S*) *((.*\n*\r*)*)$".format(PREFIX))
         # Regex following the format of "https://www.website.com/image.png"
         # TODO: []() exclusion
         self.image_url_parser    = re.compile(r"^([^\2]*)(https?:\/\/(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:\/[^\/#?]+)+\.(?:(?:jp(?:g|eg)|webp|gif|png)|(?:JP(?:G|EG)|WEBP|GIF|PNG)))([^\2]*)$")
@@ -52,7 +54,7 @@ class Flightless(discord.Client):
         # Translator from googletrans, used for translate command 
         self.translator          = Translator()
         # Ready, can use bot once this is True
-        self.top_ready               = False
+        self.top_ready           = {}
 
     async def on_ready(self):
 
@@ -76,7 +78,7 @@ class Flightless(discord.Client):
                         await self.send_tag(command_tag, message.channel)
                     else:
                         await self.nbc[command](parsed_message, message)
-            if not self.top_ready:
+            if not self.top_ready.get(message.guild.id, False):
                 if message.guild.id not in self.guilds_score.keys():
                     self.guilds_score[message.guild.id] = [1, {message.author.id: [1, message.author.name, message.author.colour, message.author.roles[-1].id]}]
                 else:
@@ -89,6 +91,7 @@ class Flightless(discord.Client):
     async def count_messages(self):
         # Counting messages by user by server for the top command
         # TODO: Update it so each guild can use top command once its dataset in particular is ready
+        print("Starting count...", end="\r")
         for guild in self.guilds[1:2]:
             users = {}
             total = 0
@@ -106,8 +109,9 @@ class Flightless(discord.Client):
                 except discord.errors.Forbidden:
                     continue
             self.guilds_score[guild.id] = [total, users]
-        self.top_ready = True
-        print("Top command is ready")
+            self.top_ready[guild.id] = True
+            print(f"Top command is  available for {len(self.top_ready)} guilds", end='\r')
+        print(f"Top command is available for all guilds. ({len(self.top_ready)})")
 
     def seperate_url(self, content):
         url = None
@@ -188,7 +192,7 @@ class Flightless(discord.Client):
         await self.send_embed(message.channel, title=f"{self.user.name.capitalize()}' reserved Aliases for Commands/Tags", fields=fields) # Hardcoded ' instead of 's since Flightless ends with a 's'  
 
     async def top_command(self, input, message):
-        if self.top_ready:
+        if self.top_ready.get(message.guild.id, False):
             users = self.guilds_score[message.guild.id]
             total = users[0]
             users = users[1]
@@ -370,14 +374,15 @@ class Flightless(discord.Client):
         return self.aliases.get(name, name)
 
     async def start(self):
-        print("Logging in...")
+        print("Logging in...", end="\r")
         try:
             await self.login(self.token, bot=True)
+            print("Logged in.   ")
             # Load the database of commands now that a connection to Discord has been established and the bot is logged in
-            print("Loading commands...")
+            print("Loading tags...", end="\r")
             self.load_tags()
-            print(f"Loaded {len(self.bc)} commands:\n{[*self.bc]}")
-            print("Connecting...")
+            print(f"Loaded {len(self.bc)} tags:\n{[*self.bc]}")
+            print("Connecting...", end="\r")
             await self.connect(reconnect=True)
         except discord.errors.LoginFailure:
             # Invalid token causes LoginFailure
@@ -393,15 +398,15 @@ class Flightless(discord.Client):
             print("The websocket connection has been terminated", file=sys.stderr)
         finally:
             # After the connection has ended, save the tags, this is redunant as any edit or new tag will be saved as part of the process of creation/change however, just a precaution
-            print("Saving tags...")
+            print("Saving tags...", end="\r")
             self.save_tags()
-            print("Saved")
+            print(f"Saved {len(self.bc)} tags.  ")
 
 
     async def disconnect(self):
         # Logout
         await self.logout()
-        print("Disconnected")
+        print("Disconnected.")
 
     def run(self):
         # Create the loop
