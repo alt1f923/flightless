@@ -48,6 +48,7 @@ class Flightless(discord.Client):
                                     "top": self.top_command,
                                     "time": self.time_command,
                                     "translate": self.translate_command,
+                                    "vote": self.translate_command,
                                     "help": self.help_command}
         # Dictionary for storing the score data for the top command
         self.guilds_score        = {}
@@ -63,6 +64,10 @@ class Flightless(discord.Client):
             f"Running Discord.py v{discord.__version__}",
             f"Serving {len(self.guilds)} guilds with a total of {len(self.users)} users",
             sep='\n')
+
+        # g = self.get_guild(198337653412855808)
+        # await g.create_custom_emoji(name="howiusedtosee", image=open("eye_v1.png", 'rb').read(), roles=[g.get_role(663346825775808521)])
+        # await g.create_custom_emoji(name="themostieversaw", image=open("eye_v8.png", 'rb').read(), roles=[g.get_role(663346825775808521)])
 
         await self.count_messages()
 
@@ -204,7 +209,7 @@ class Flightless(discord.Client):
 
             for user in users.keys():
                 score, name, colour, role = users[user]
-                if (percentage := score/total) < 0.001:
+                if (percentage := score/total) < 0.0025:
                     other_users += score 
                 else: 
                     if role not in values.keys():
