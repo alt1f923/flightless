@@ -1,5 +1,6 @@
-**/startbot.sh
+startbot.sh
 **/tags.*
 **/aliases.*
 **/__pycache__
-bot/images/**
+bot/**
+target/**
