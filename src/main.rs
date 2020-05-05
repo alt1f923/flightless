@@ -17,15 +17,6 @@ lazy_static! {
     static ref MESSAGE_REGEX: Regex = Regex::new(r"^f/ *(?:(?:([^\s=]+) +([^\s=]*) +(.*\S) *= *((?:.*\n*\r*)*))|(?:(here|\d{18}):)?(\S.*))?$").unwrap();
 }
 
-// fn get_tag_content(tag: &str, id: , db: Database) -> String {
-//     
-// }
-
-async fn get_database(uri: &String) -> Result<Database, Box<dyn Error + Send + Sync>> {
-    let client = MongoClient::with_uri_str(uri)?;
-    Ok(client.database("tags"))
-}
-
 async fn handle_event(event: (u64, Event), client: HttpClient, db: Arc<Mutex<Database>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         (id, Event::Ready(_)) => {
@@ -57,7 +48,8 @@ async fn handle_event(event: (u64, Event), client: HttpClient, db: Arc<Mutex<Dat
 }
 
 async fn run_bot(token: &String, database_uri: &String) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let db = Arc::new(Mutex::new(get_database(database_uri).await?));
+    let client = MongoClient::with_uri_str(database_uri)?;
+    let db = Arc::new(Mutex::new(client.database("tags")));
 
     let client = HttpClient::new(token);
 
