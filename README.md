@@ -5,7 +5,7 @@
 Dawn has been given renewed life and is now operating under the name 'Twilight'.  
 Because of this I will be migrating my bot back to Rust.
 ### Can I be able to run this bot on my hardware using my own Token?
-Yes. To an extent, you will be able to run Flightless on your own Token, even provide your own custom command prefix from the command terminal when you start it.
+Yes. To an extent, this was my original intention with the bot, but it is less of a priority for me now. However you will be able to run Flightless on your own Token. Provided you set up a MongoDB database with the instructions down below.
 
 # Installation
 ### WIP
@@ -17,7 +17,7 @@ You need to set these appropriately.
 `FLIGHTLESS_MONGO_URI` being in the format of `mongodb+srv://username:password@...mongodb.net` (See more: https://github.com/mongodb/mongo-rust-driver)  
 `FLIGHTLESS_TOKEN` being the discord bot token provided to you at: https://discordapp.com/developers/applications.
 #### Database
-You must set up an owner user in the `users` mongodb database, under the `admins` collection.  
+You must set up an owner user in the `users` MongoDB database, under the `admins` collection.  
 This must be in the format of: `{ "rank": "Owner", "id": [Your discord user ID] }`
 ### Starting
 You only need to run the binary via typing `./Flightless` into the terminal or by running it otherwise.
