@@ -1,6 +1,6 @@
 [package]
 name = "flightless"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Duncan Fryer"]
 edition = "2018"
 
@@ -13,6 +13,5 @@ tokio = { version = "0.2", features = ["full"] }
 futures = "0.3.4"
 regex = "1"
 lazy_static = "1.4.0"
-mongodb = { version = "0.10.0", default-features= false, features = ["sync"] }
-bson = "0.14.0"
+mongodb = "1.0.0"
 chrono = "0.4"

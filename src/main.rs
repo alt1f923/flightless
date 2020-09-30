@@ -14,13 +14,14 @@ use std::{
     error::Error
 };
 use regex::Regex;
-use bson::doc;
 use mongodb::{
-     sync::{
-         Client as MongoClient,
-         Database
+    bson::{
+        doc,
+        Document
     },
-     options::FindOneOptions
+    Client as MongoClient,
+    Database,
+    options::FindOneOptions,
 };
 use chrono::Utc;
 
@@ -28,38 +29,64 @@ lazy_static! {
     // Regex for messages, matches messages that start with f/tag/, f/here/id:tag, f/command etc syntax
     static ref MESSAGE_REGEX: Regex = Regex::new(r"^f/ *(?:(?:(tags?|help|info|timezone|translate) +([^\s=]*) +(.*\S) *= *((?:.*\n*\r*)*))|(?:(here|\d{18}):)?(\S.*))$").unwrap();
     // Regex for creating and editing tags, captures image urls
-    static ref IMAGE_URL_REGEX: Regex = Regex::new(r"^([^\2]*)(https?:\/\/(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:\/[^\/#?]+)+\.(?:(?:jp(?:g|eg)|webp|gif|png)|(?:JP(?:G|EG)|WEBP|GIF|PNG)))([^\2]*)$").unwrap();
-    // Database that holds all the tags, tags are stored inside collections that are inside the tags database.
-    // The collection name is the ID of the discord server that it is local to. Collection name will be 0 if it is a global tag.
-    static ref TAGS_DATABASE: Database = {
-        let client = MongoClient::with_uri_str(&env::var("FLIGHTLESS_MONGO_URI").unwrap()).unwrap();
-        client.database("tags")
-    };
-    // Database that holds information on discord users.
-    // Collections are admins and blacklisted.
-    // TODO: Implement blacklist
-    static ref USER_DATABASE: Database = {
-        let client = MongoClient::with_uri_str(&env::var("FLIGHTLESS_MONGO_URI").unwrap()).unwrap();
-        client.database("users")
-    };
-    // Discord user ID of bot owner is stored in the Mongo Database. Check README.md for more info.
-    static ref OWNER_ID: u64 = {
-        let collection = USER_DATABASE.collection("admins");
-        let filter = doc! { "rank": "Owner" };
-        let find_one_options = FindOneOptions::builder().build();
-        let cursor = collection.find_one(filter, find_one_options);
-        cursor.unwrap().unwrap().get_i64("id").unwrap() as u64
-    };
+    static ref IMAGE_URL_REGEX: Regex = Regex::new(r"^(.*)(https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+.(?:(?:jp(?:g|eg)|webp|gif|png)|(?:JP(?:G|EG)|WEBP|GIF|PNG)))(.*)$").unwrap();
 }
 
-async fn build_tag_embed(tag: &str, key: String) -> Embed {
-    // Create the collection using the location as a key
-    // Finding the tag in the locations collection
-    let collection = TAGS_DATABASE.collection(&key);
+async fn get_database_client() -> Result<MongoClient, Box<dyn Error + Send + Sync>> {
+    let client = MongoClient::with_uri_str(&env::var("FLIGHTLESS_MONGO_URI").unwrap()).await?;
+    Ok(client)
+}
+
+async fn get_tags_database() -> Result<Database, Box<dyn Error + Send + Sync>> {
+    let client = get_database_client().await?;
+    let db = client.database("tags");
+    Ok(db)
+}
+
+async fn get_owner_id() -> Result<u64, Box<dyn Error + Send + Sync>> {
+    let client = get_database_client().await?;
+    let db = client.database("users");
+
+    let collection = db.collection("admins");
+
+    let filter = doc! { "rank": "Owner" };
+    let find_one_options = FindOneOptions::builder().build();
+    let result = collection.find_one(filter, find_one_options).await?;
+
+    Ok(match result {
+        Some(document) => {document.get_i64("id").unwrap() as u64}
+        // Unable to find owner id, owner id might not be set, set owner id to 0
+        None => {0}
+    })
+}
+
+fn get_filter_and_options(tag: &str) -> (Document, FindOneOptions) {
+    // Finding the tag in the keys collection
     let filter = doc! { "name": tag };
     let find_one_options = FindOneOptions::builder().build();
-    let cursor = collection.find_one(filter, find_one_options).unwrap().unwrap();
 
+    // Return tuple containing filter and options
+    (filter, find_one_options)
+}
+
+async fn get_tag(tag: &str, key: String) -> Result<Option<Document>, Box<dyn Error + Send + Sync>> {
+    // Get tags database
+    let tags_database = get_tags_database().await?;
+    // Create the collection using the location as a key
+    let collection = tags_database.collection(&key);
+    // Get filter and options from function
+    let (filter, find_one_options) = get_filter_and_options(tag);
+    // Get result from database
+    let result = collection.find_one(filter, find_one_options).await?;
+    // Return result
+    Ok(result)
+}
+
+// TODO: delete_tag, edit_tag, promote_tag, demote_tag etc functions
+// Think about using functions like: https://docs.rs/mongodb/1.0.0/mongodb/struct.Collection.html#method.find_one_and_delete
+// and https://docs.rs/mongodb/1.0.0/mongodb/struct.Collection.html#method.find_one_and_replace for the first two.
+
+async fn build_tag_embed(cursor: Document) -> Embed {
     // Build embed with Embed struct from Twilight
     Embed {
         author: Some(EmbedAuthor {
@@ -100,6 +127,28 @@ async fn build_tag_embed(tag: &str, key: String) -> Embed {
     }
 }
 
+async fn create_tag(tag:&str, key:String, image:Option<&str>, text:Option<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Get tags database
+    let tags_database = get_tags_database().await?;
+    // Create the collection using the location as a key
+    let collection = tags_database.collection(&key);
+    // Create doc
+    let mut doc = doc! { "name": tag };
+    // Insert items into document
+    match text {
+        Some(content) => {doc.insert("content", content);}
+        None => {}
+    }
+    match image {
+        Some(image_url) => {doc.insert("image", image_url);}
+        None => {}
+    }
+    // Insert the document (tag) into the collection (local to server id).
+    collection.insert_one(doc, None).await?;
+    // Return OK result
+    Ok(())
+}
+
 async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         (id, Event::Ready(_)) => {
@@ -115,6 +164,7 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                     match captures.get(6).map(|m| m.as_str()) {
                         Some(capture) => {
                             let tag = capture;
+                            println!("{:?}", tag);
                             // 6th item (5th capture group) is the optional location part of the string
                             // If a user specifies a location like here (will be translated to the server's id) or none for global
                             // If a tag name doesn't exist in global then it will check local tags
@@ -130,7 +180,8 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                     if capture.parse::<u64>().unwrap() == message.guild_id.unwrap().0 {
                                         Ok(message.guild_id.unwrap().0.to_string())
                                     } else {
-                                        if message.author.id.0 == *OWNER_ID {
+                                        let owner_id = get_owner_id().await?;
+                                        if message.author.id.0 == owner_id {
                                             Ok(capture.to_string())
                                         } else {
                                             Err("You do not have access to cross-server local tags.")
@@ -142,8 +193,16 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                             } {
                                 // User was allowed to recieve key
                                 Ok(key) => {
-                                    let embed = build_tag_embed(tag, key).await;
-                                    client.create_message(message.channel_id).embed(embed).await?;
+                                    // Get Database cursor for tag at key location
+                                    match get_tag(tag, key).await? {
+                                        Some(cursor) => {
+                                            // Build embed using database content via the cursor
+                                            let embed = build_tag_embed(cursor).await;
+                                            // Send the embed 
+                                            client.create_message(message.channel_id).embed(embed).await?;
+                                            }
+                                        None => {}
+                                    }
                                 },
                                 // User was not allowed to recieve key, permission error
                                 Err(e)  => {
@@ -160,17 +219,53 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                     match match captures.get(2).map(|m| m.as_str()) {
                                         Some("create")   => {
                                             // Creating a new local tag
+                                            // No need to check whether capture group 4 or 5 are some, they are guaranteed to exist because of the regex 
+                                            let tag = captures.get(3).map(|m| m.as_str()).unwrap();
                                             // Check if name exists in global tags
-
-                                            // Check if name exists in local tags
-
-                                            // Check if 3rd capture group is not None
-
-                                            // Run 3rd capture group through image url finding regex
-
-                                            // Insert new tag into database
-                                            Ok(())
-                                        },
+                                            match get_tag(tag, String::from("0")).await? {
+                                                Some(_) => {
+                                                    // The tag already exists, inform user and do not create tag
+                                                    Err(String::from("A tag by this name already exists, try again with a different name."))
+                                                }
+                                                None => {
+                                                    // Check if name exists in local tags
+                                                    match get_tag(tag, message.guild_id.unwrap().0.to_string()).await? {
+                                                        Some(_) => {
+                                                            // The tag already exists, inform user and do not create tag
+                                                            Err(String::from("A tag by this name already exists for this server, try again with a different name."))
+                                                        }
+                                                        None => {
+                                                            // Run 3rd capture group through image url finding regex
+                                                            let content = captures.get(4).map(|m| m.as_str()).unwrap();
+                                                            if IMAGE_URL_REGEX.is_match(&content) {
+                                                                let captures = IMAGE_URL_REGEX.captures(content).unwrap();
+                                                                // Use captures from regex match to define image url as option (None if not found)
+                                                                let image = captures.get(2).map(|m| m.as_str());
+                                                                // Use captures from regex match to create string
+                                                                let mut text = String::new();
+                                                                match captures.get(1).map(|m| m.as_str()) {
+                                                                    Some(content) => {text.push_str(content)}
+                                                                    None => {}
+                                                                }
+                                                                match captures.get(3).map(|m| m.as_str()) {
+                                                                    Some(content) => {text.push_str(content)}
+                                                                    None => {}
+                                                                }
+                                                                // If no text was added from captures then define text as None
+                                                                let mut content = None;
+                                                                if text.is_empty() == false {
+                                                                    content = Some(text);
+                                                                }
+                                                                // Insert new tag into database
+                                                                let key = message.guild_id.unwrap().0.to_string();
+                                                                create_tag(tag, key, image, content).await?;
+                                                            }
+                                                            Ok(())
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                         Some("edit")     => {Err(String::from("Not available yet, sorry. :("))},
                                         Some("delete")   => {Err(String::from("Not available yet, sorry. :("))},
                                         Some("promote")  => {Err(String::from("Not available yet, sorry. :("))},
