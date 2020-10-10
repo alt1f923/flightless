@@ -1,13 +1,11 @@
 #[macro_use] extern crate lazy_static;
-use twilight::{
-    gateway::{
-        shard::Event, 
-        Cluster, 
-        ClusterConfig
-    },
-    http::Client as HttpClient,
-    model::channel::embed::*
+use twilight_gateway::{
+    Event, 
+    Cluster, 
 };
+use twilight_model::channel::embed::*;
+use twilight_model::gateway::Intents;
+use twilight_http::Client as HttpClient;
 use futures::StreamExt;
 use std::{
     env, 
@@ -69,7 +67,7 @@ fn get_filter_and_options(tag: &str) -> (Document, FindOneOptions) {
     (filter, find_one_options)
 }
 
-async fn get_tag(tag: &str, key: &String) -> Result<Option<Document>, Box<dyn Error + Send + Sync>> {
+async fn get_tag(tag: &str, key: &str) -> Result<Option<Document>, Box<dyn Error + Send + Sync>> {
     // Get tags database
     let tags_database = get_tags_database().await?;
     // Create the collection using the location as a key
@@ -77,14 +75,91 @@ async fn get_tag(tag: &str, key: &String) -> Result<Option<Document>, Box<dyn Er
     // Get filter and options from function
     let (filter, find_one_options) = get_filter_and_options(tag);
     // Get result from database
-    let result = collection.find_one(filter, find_one_options).await?;
+    let result = collection.find_one(filter, None).await?;
     // Return result
     Ok(result)
 }
 
+async fn create_tag(tag:&str, key:String, image:Option<&str>, text:Option<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Get tags database
+    let tags_database = get_tags_database().await?;
+    // Create the collection using the location as a key
+    let collection = tags_database.collection(&key);
+    // Create doc with the tag name
+    let mut doc = doc! { "name": tag };
+    // Insert text content and image url into document
+    if let Some(content) = text {
+        doc.insert("content", content);
+    }
+    if let Some(image_url) = image {
+        doc.insert("image", image_url);
+    }
+    // Insert the document (tag) into the collection (local to server id).
+    collection.insert_one(doc, None).await?;
+    // Return OK result
+    Ok(())
+}
+
 // TODO: delete_tag, edit_tag, promote_tag, demote_tag etc functions
-// Think about using functions like: https://docs.rs/mongodb/1.0.0/mongodb/struct.Collection.html#method.find_one_and_delete
-// and https://docs.rs/mongodb/1.0.0/mongodb/struct.Collection.html#method.find_one_and_replace for the first two.
+// Implement also permission checkers and way of tracking owners of tags
+
+async fn edit_tag(tag:&str, key:String, image:Option<&str>, text:Option<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Get tags database
+    let tags_database = get_tags_database().await?;
+    // Create the collection using the location as a key
+    let collection = tags_database.collection(&key);
+    // Create query to be used to find the tag via its name
+    let query = doc! { "name": tag };
+    // Create empty document
+    let mut doc  = Document::new();
+    // Insert items into document
+    if let Some(content) = text {
+        doc.insert("content", content);
+    }
+    if let Some(image_url) = image {
+        doc.insert("image", image_url);
+    }
+    // Update tag
+    collection.update_one(query, doc, None).await?;
+    Ok(())
+}
+
+async fn delete_tag(tag: &str, key: String) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Get tags database
+    let tags_database = get_tags_database().await?;
+    // Create the collection using the location as a key
+    let collection = tags_database.collection(&key);
+    // Create query to be used to find the tag via its name
+    let query = doc! { "name": tag };
+    // Delete tag
+    collection.delete_one(query, None).await?;
+    Ok(())
+}
+
+async fn check_if_tag_exists(tag: &str, local_scope: &str) -> Result<u8, Box<dyn Error + Send + Sync>> {
+    // Check if the tag exists in either scope
+    match get_tag(tag, "0").await? {
+        Some(_) => {
+            // The tag already exists in the global scope
+            Ok(0)
+        }
+        None => {
+            // Check if name exists in local tags
+            match get_tag(tag, local_scope).await? {
+                Some(_) => {
+                    // The tag already exists in local scope
+                    Ok(1)
+                }
+                None => {
+                    // The tag does not exist
+                    Ok(2)
+                }
+            }
+        }
+    }
+}
+
+
 
 async fn build_tag_embed(cursor: Document) -> Embed {
     // Build embed with Embed struct from Twilight
@@ -127,35 +202,13 @@ async fn build_tag_embed(cursor: Document) -> Embed {
     }
 }
 
-async fn create_tag(tag:&str, key:String, image:Option<&str>, text:Option<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Get tags database
-    let tags_database = get_tags_database().await?;
-    // Create the collection using the location as a key
-    let collection = tags_database.collection(&key);
-    // Create doc
-    let mut doc = doc! { "name": tag };
-    // Insert items into document
-    match text {
-        Some(content) => {doc.insert("content", content);}
-        None => {}
-    }
-    match image {
-        Some(image_url) => {doc.insert("image", image_url);}
-        None => {}
-    }
-    // Insert the document (tag) into the collection (local to server id).
-    collection.insert_one(doc, None).await?;
-    // Return OK result
-    Ok(())
-}
-
 async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         (id, Event::Ready(_)) => {
             println!("Connected on shard {}", id);
         }
         (_, Event::MessageCreate(message)) => {
-            if message.author.bot == false {
+            if !message.author.bot {
                 // TODO: Implement ability to blacklist users and add check for authors blacklist status here.
                 if MESSAGE_REGEX.is_match(&message.content) {
                     let captures = MESSAGE_REGEX.captures(&message.content).unwrap();
@@ -198,19 +251,16 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                             // Build embed using database content via the cursor
                                             let embed = build_tag_embed(cursor).await;
                                             // Send the embed 
-                                            client.create_message(message.channel_id).embed(embed).await?;
+                                            client.create_message(message.channel_id).embed(embed)?.await?;
                                             }
                                         None => {
                                             // Tag was not found in previous scope, if it checked global, then check local
                                             if key == "0" {
-                                                match get_tag(tag, &message.guild_id.unwrap().0.to_string()).await? {
-                                                    Some(cursor) => {
-                                                        // Build embed using database content via the cursor
-                                                        let embed = build_tag_embed(cursor).await;
-                                                        // Send the embed 
-                                                        client.create_message(message.channel_id).embed(embed).await?;
-                                                    }
-                                                    None => {}
+                                                if let Some(cursor) = get_tag(tag, &message.guild_id.unwrap().0.to_string()).await? {
+                                                    // Build embed using database content via the cursor
+                                                    let embed = build_tag_embed(cursor).await;
+                                                    // Send the embed 
+                                                    client.create_message(message.channel_id).embed(embed)?.await?;
                                                 }
                                             }
                                          }
@@ -218,7 +268,7 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                 },
                                 // User was not allowed to recieve key, permission error
                                 Err(e)  => {
-                                    client.create_message(message.channel_id).content(e).await?;
+                                    client.create_message(message.channel_id).content(e)?.await?;
                                 }
                             }
                         },
@@ -229,62 +279,132 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                 Some("tag") => {
                                     // Tag command, check 2nd capture group to find subcommand
                                     match match captures.get(2).map(|m| m.as_str()) {
-                                        Some("create")   => {
+                                        Some("create") => {
                                             // Creating a new local tag
-                                            // No need to check whether capture group 4 or 5 are some, they are guaranteed to exist because of the regex 
+                                            // No need to check whether capture group 4 or 5 are some, they are guaranteed to exist because of the regex match
                                             let tag = captures.get(3).map(|m| m.as_str()).unwrap();
-                                            // Check if name exists in global tags
-                                            match get_tag(tag, &String::from("0")).await? {
-                                                Some(_) => {
-                                                    // The tag already exists, inform user and do not create tag
+                                            let local_scope = &message.guild_id.unwrap().0.to_string();
+
+                                            // Check if tag exists in any scope
+                                            match check_if_tag_exists(tag, local_scope).await? {
+                                                0 | 1 => {
+                                                    // Tag exists in global or local scope, inform the user and do not create tag
                                                     Err(String::from("A tag by this name already exists, try again with a different name."))
-                                                }
-                                                None => {
-                                                    // Check if name exists in local tags
-                                                    match get_tag(tag, &message.guild_id.unwrap().0.to_string()).await? {
-                                                        Some(_) => {
-                                                            // The tag already exists, inform user and do not create tag
-                                                            Err(String::from("A tag by this name already exists for this server, try again with a different name."))
-                                                        }
-                                                        None => {
-                                                            // Run 3rd capture group through image url finding regex
-                                                            match captures.get(4).map(|m| m.as_str()) {
-                                                                Some(content) => {let (content, image) = if IMAGE_URL_REGEX.is_match(&content) {
-                                                                    let captures = IMAGE_URL_REGEX.captures(content).unwrap();
-                                                                    // Use captures from regex match to define image url as option (None if not found)
-                                                                    let image = captures.get(2).map(|m| m.as_str());
-                                                                    // Use captures from regex match to create string
-                                                                    let mut text = String::new();
-                                                                    match captures.get(1).map(|m| m.as_str()) {
-                                                                        Some(first_half) => {text.push_str(first_half)}
-                                                                        None => {}
-                                                                    }
-                                                                    match captures.get(3).map(|m| m.as_str()) {
-                                                                        Some(second_half) => {text.push_str(second_half)}
-                                                                        None => {}
-                                                                    }
-                                                                    // If no text was added from captures then define text as None
-                                                                    let mut content = None;
-                                                                    if text.is_empty() == false {
-                                                                        content = Some(text);
-                                                                    }
-                                                                    (content, image)
-                                                                    } else {
-                                                                        (Some(String::from(content)), None)
-                                                                    };
-                                                                    // Insert new tag into database
-                                                                    let key = message.guild_id.unwrap().0.to_string();
-                                                                    create_tag(tag, key, image, content).await?;
-                                                                    Ok(())},
-                                                                None => {Err(String::from("Tag content was not defined."))}
+                                                },
+                                                _ => {
+                                                    // Run 3rd capture group through image url finding regex
+                                                    match captures.get(4).map(|m| m.as_str()) {
+                                                        Some(content) => {let (content, image) = if IMAGE_URL_REGEX.is_match(&content) {
+                                                            let captures = IMAGE_URL_REGEX.captures(content).unwrap();
+                                                            // Use captures from regex match to define image url as option (None if not found)
+                                                            let image = captures.get(2).map(|m| m.as_str());
+                                                            // Use captures from regex match to create string
+                                                            let mut text = String::new();
+                                                            if let Some(first_half) = captures.get(1).map(|m| m.as_str()) {
+                                                                text.push_str(first_half);
                                                             }
+                                                            if let Some(last_half) = captures.get(3).map(|m| m.as_str()) {
+                                                                text.push_str(last_half);
+                                                            }
+                                                            // If no text was added from captures then define text as None
+                                                            let mut content = None;
+                                                            if !text.is_empty(){
+                                                                content = Some(text);
+                                                            }
+                                                            (content, image)
+                                                            } else {
+                                                                (Some(String::from(content)), None)
+                                                            };
+                                                            // Insert new tag into database
+                                                            let key = message.guild_id.unwrap().0.to_string();
+                                                            create_tag(tag, key, image, content).await?;
+                                                            Ok(())
+                                                        },
+                                                        None => {
+                                                            // Tag content was not defined - THIS DOES NOT WORK
+                                                            Err(String::from("Tag content was not defined."))
                                                         }
                                                     }
+                                                }  
+                                            } 
+                                        },
+                                        Some("edit")     => {
+                                            // Creating a new local tag
+                                            // No need to check whether capture group 4 or 5 are some, they are guaranteed to exist because of the regex match
+                                            let tag = captures.get(3).map(|m| m.as_str()).unwrap();
+                                            let local_scope = message.guild_id.unwrap().0.to_string();
+
+                                            let tag_exists = check_if_tag_exists(tag, &local_scope).await?;
+                                            
+                                            // Check if name exists in global tags
+                                            match tag_exists {
+                                                0 | 1 => {
+                                                    // Tag was found in global scope
+
+                                                    // TODO: Add checks for permission to edit this tag - Stuff like is this user the owner of the tag or a 
+                                                    // bot admin?
+
+                                                    // Run 3rd capture group through image url finding regex
+                                                    if let Some(content) = captures.get(4).map(|m| m.as_str()) {
+                                                        let (content, image) = if IMAGE_URL_REGEX.is_match(&content) {
+                                                            let captures = IMAGE_URL_REGEX.captures(content).unwrap();
+                                                            // Use captures from regex match to define image url as option (None if not found)
+                                                            let image = captures.get(2).map(|m| m.as_str());
+                                                            // Use captures from regex match to create string
+                                                            let mut text = String::new();
+                                                            if let Some(first_half) = captures.get(1).map(|m| m.as_str()) {
+                                                                text.push_str(first_half);
+                                                            }
+                                                            if let Some(last_half) = captures.get(3).map(|m| m.as_str()) {
+                                                                text.push_str(last_half);
+                                                            }
+                                                            // If no text was added from captures then define text as None
+                                                            let mut content = None;
+                                                            if !text.is_empty(){
+                                                                content = Some(text);
+                                                            }
+                                                            (content, image)
+                                                        } else {
+                                                            (Some(String::from(content)), None)
+                                                        };
+
+                                                        // Insert new tag into database
+                                                        let key;
+                                                        if tag_exists == 1 {
+                                                            key = message.guild_id.unwrap().0.to_string();
+                                                        } else {
+                                                            key = local_scope;
+                                                        }
+                                                        
+                                                        edit_tag(tag, key, image, content).await?;
+                                                    }
+                                                    Ok(())
+                                                },
+                                                _ => {
+                                                    // Tag does not exist, can not edit
+                                                    Err(String::from("No tag by that name was found."))
                                                 }
                                             }
                                         }
-                                        Some("edit")     => {Err(String::from("Not available yet, sorry. :("))},
-                                        Some("delete")   => {Err(String::from("Not available yet, sorry. :("))},
+                                        Some("delete")   => {
+                                            let tag = captures.get(3).map(|m| m.as_str()).unwrap();
+                                            let local_scope = message.guild_id.unwrap().0.to_string();
+
+                                            match check_if_tag_exists(tag, &local_scope).await? {
+                                                0 => {
+                                                    // Tag was found in global scope
+                                                    delete_tag(tag, String::from("0")).await?;
+                                                },
+                                                1 => {
+                                                    // Tag was found in local scope
+                                                    delete_tag(tag, local_scope).await?;
+                                                },
+                                                _ => {
+                                                    // Tag was not found, do nothing
+                                                }
+                                            }
+                                            Ok(())
+                                        },
                                         Some("promote")  => {Err(String::from("Not available yet, sorry. :("))},
                                         Some("demote")   => {Err(String::from("Not available yet, sorry. :("))},
                                         Some(subcommand) => {Err(format!("`{}` is not a valid option. Perhaps you meant `f/tag create` or `f/tag edit`.\nType `f/help tag` for more info.", subcommand))},
@@ -294,7 +414,7 @@ async fn handle_event(event: (u64, Event), client: HttpClient) -> Result<(), Box
                                         Ok(_)  => {},
                                         // Tag action encountered an error, report it to user
                                         Err(e) => {
-                                           client.create_message(message.channel_id).content(e).await?; 
+                                           client.create_message(message.channel_id).content(e)?.await?; 
                                         }
                                     }
                                 },
@@ -320,11 +440,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let client = HttpClient::new(&token);
 
-    let cluster_config = ClusterConfig::builder(&token).build();
-    let cluster = Cluster::new(cluster_config);
-    cluster.up().await?;
+    let intents = Intents::GUILD_MESSAGES;
+    let cluster = Cluster::builder(&token).intents(intents).build().await?;
+    cluster.up().await;
 
-    let mut events = cluster.events().await;
+    let mut events = cluster.events();
     
     while let Some(event) = events.next().await {
         tokio::spawn(handle_event(event, client.clone()));
