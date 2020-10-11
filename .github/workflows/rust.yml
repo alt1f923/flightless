@@ -1,4 +1,4 @@
-name: Rust
+name: Rust Clippy and Build check
 
 on:
   push:
@@ -6,18 +6,27 @@ on:
   pull_request:
     branches: [ master, development ]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build:
-
+  clippy_check:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            components: clippy
+            override: true
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+  build:
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Build
-      run: cargo build --verbose
+      run: cargo +nightly build --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo +nightly test --verbose
   
+ 
